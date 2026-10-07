@@ -8,8 +8,11 @@ cd "$(dirname "$0")"
 # Runs the Rush version that rush.json pins, so no global install is needed.
 rush() { node common/scripts/install-run-rush.js "$@"; }
 
-# The steps edit these files; put them back so a rerun starts from the committed state.
-trap 'git checkout -- rush.json packages/app/package.json' EXIT
+# The steps edit these files; put them back so a rerun starts from the same state.
+SAVED="$(mktemp -d)"
+cp rush.json "$SAVED/rush.json"
+cp packages/app/package.json "$SAVED/app-package.json"
+trap 'cp "$SAVED/rush.json" rush.json; cp "$SAVED/app-package.json" packages/app/package.json; rm -r "$SAVED"' EXIT
 
 PNPM_OLD=11.24.0
 PNPM_NEW=12.10.1
