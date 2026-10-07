@@ -6,7 +6,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Runs the Rush version that rush.json pins. You do not need a global rush command.
-rush() { node common/scripts/install-run-rush.js "$@"; }
+# To run another Rush build, such as a local build of a fix, set REPRO_RUSH_START to its start-dev.js file.
+rush() {
+  if [ -n "${REPRO_RUSH_START:-}" ]; then
+    node "$REPRO_RUSH_START" "$@"
+  else
+    node common/scripts/install-run-rush.js "$@"
+  fi
+}
 
 # The steps change these files. The script puts back the saved copies when it stops.
 SAVED="$(mktemp -d)"

@@ -2,6 +2,9 @@
 
 This repository reproduces a Rush bug with pnpm 12.
 
+- Issue: https://github.com/microsoft/rushstack/issues/6117
+- Fix (draft): the `brunojppb/6117/pnpm12-lockfile-sync` branch on https://github.com/brunojppb/rushstack. See [Test the fix](#test-the-fix).
+
 This text uses two names for two lockfiles:
 
 - The **committed lockfile** is `common/config/rush/pnpm-lock.yaml`. You commit this file to git.
@@ -65,7 +68,20 @@ After step 3, the committed lockfile records `graphql@16.13.1`. The temp lockfil
 
 ## The cause
 
-After step 2, the peer variant is `graphql@17.0.0-alpha.7`. This version does not satisfy the peer range `^17.0.0`. pnpm 11 keeps the old peer variant. pnpm 12 resolves the peer again and picks `graphql@16.13.1`. pnpm 12 writes this version to the temp lockfile, so the temp lockfile and `node_modules` match.
+After step 2, the peer variant is `graphql@17.0.0-alpha.7`. This version does not satisfy the peer range `^17.0.0`.
+
+`rush update` gives pnpm the `--no-prefer-frozen-lockfile` option. pnpm then resolves the dependencies again, and starts from the lockfile. pnpm 11 keeps the peer variant that the lockfile records. pnpm 12 recomputes the peer variant and picks `graphql@16.13.1`. pnpm 12 writes this version to the temp lockfile, so the temp lockfile and `node_modules` match.
+
+These runs show the difference. Each run starts from the lockfile of step 2.
+
+| Run | Peer variant in the temp lockfile |
+| --- | --- |
+| pnpm 11.24.0 and 11.28.5, `rush update` | `graphql@17.0.0-alpha.7` |
+| pnpm 12.4.0 to 12.10.1, `rush update` | `graphql@16.13.1` |
+| pnpm 12.10.1, `--prefer-frozen-lockfile` | `graphql@17.0.0-alpha.7` |
+| pnpm 11.24.0 and 12.10.1, no lockfile | `graphql@16.13.1` |
+
+pnpm 12.0.0 to 12.3.0 do not accept the `--no-prefer-frozen-lockfile` option, so `rush update` fails with them.
 
 Rush copies the temp lockfile to the committed lockfile only when its own check finds a change. Here, the `package.json` files did not change, so Rush does not copy the file. `libraries/rush-lib/src/logic/base/BaseInstallManager.ts` has this comment in the branch that skips the copy:
 
@@ -73,12 +89,58 @@ Rush copies the temp lockfile to the committed lockfile only when its own check 
 // TODO: Validate whether the package manager updated it in a nontrivial way
 ```
 
-`rush install` has a related problem. By default, it gives pnpm the `--no-prefer-frozen-lockfile` option. pnpm 12 then resolves the peers again and does not follow the committed lockfile.
+`rush install` has a related problem. By default, it also gives pnpm the `--no-prefer-frozen-lockfile` option. pnpm 12 then recomputes the peer variants and does not follow the committed lockfile.
 
 ## Workarounds
 
 - Run `rush update --recheck`. Rush then copies the temp lockfile to the committed lockfile.
 - Set `"usePnpmFrozenLockfileForRushInstall": true` in `common/config/rush/experiments.json`. `rush install` then gives pnpm the `--frozen-lockfile` option, and pnpm follows the committed lockfile. This setting does not change `rush update`.
+
+## Test the fix
+
+The `brunojppb/6117/pnpm12-lockfile-sync` branch on https://github.com/brunojppb/rushstack has a fix. With the fix, `rush update` copies the temp lockfile to the committed lockfile when pnpm 12 changes it.
+
+You need Node 22 to build Rush, because the `rushstack` repository accepts only Node 22. You need Node 24 to run `repro.sh`.
+
+1. Clone the fork and check out the branch:
+
+   ```bash
+   git clone https://github.com/brunojppb/rushstack.git
+   cd rushstack
+   git checkout brunojppb/6117/pnpm12-lockfile-sync
+   ```
+
+2. With Node 22, install the dependencies and build Rush:
+
+   ```bash
+   node common/scripts/install-run-rush.js install
+   node common/scripts/install-run-rush.js build --to @microsoft/rush
+   ```
+
+3. In this repository, with Node 24, set `REPRO_RUSH_START` to the start script of that build. Then run the script:
+
+   ```bash
+   REPRO_RUSH_START=/path/to/rushstack/apps/rush/lib-commonjs/start-dev.js ./repro.sh
+   ```
+
+The expected result:
+
+```
+== 3. Set pnpm to 12.10.1, then run rush update
+temp lockfile:      graphql@16.13.1
+committed lockfile: graphql@16.13.1
+node_modules:       graphql@16.13.1
+committed lockfile changed: yes
+
+== 4. Run rush purge, then rush install with pnpm 12.10.1
+committed lockfile: graphql@16.13.1
+node_modules:       graphql@16.13.1
+
+== Result
+OK: the committed lockfile matches node_modules.
+```
+
+The script exits with code 0.
 
 ## Versions
 
