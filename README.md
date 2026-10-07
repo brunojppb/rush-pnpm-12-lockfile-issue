@@ -4,7 +4,7 @@ With pnpm 12, `rush update` can leave `common/config/rush/pnpm-lock.yaml` unchan
 
 ## Run it
 
-You need Node 22 and the `rush` command on your `PATH`. Rush downloads Rush 5.181.0 and the pinned pnpm versions on its own.
+You need Node 24 (see `.nvmrc`). The script runs Rush through `common/scripts/install-run-rush.js`, which downloads Rush 5.181.0 and the pinned pnpm versions. You do not need a global `rush`.
 
 ```bash
 ./repro.sh
@@ -69,4 +69,4 @@ Rush copies `common/temp/pnpm-lock.yaml` back to `common/config/rush/pnpm-lock.y
 
 - Rush 5.181.0
 - pnpm 11.24.0 and 12.10.1
-- Node 22
+- Node 24.21.0

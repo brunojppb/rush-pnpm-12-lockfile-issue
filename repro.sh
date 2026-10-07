@@ -5,6 +5,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Runs the Rush version that rush.json pins, so no global install is needed.
+rush() { node common/scripts/install-run-rush.js "$@"; }
+
 # The steps edit these files; put them back so a rerun starts from the committed state.
 trap 'git checkout -- rush.json packages/app/package.json' EXIT
 
