@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Shows that `rush update` with pnpm 12 can leave common/config/rush/pnpm-lock.yaml
-# out of sync with the lockfile that pnpm wrote and with node_modules.
+# Shows a Rush bug with pnpm 12. `rush update` can keep the old committed lockfile.
+# The committed lockfile then does not match the temp lockfile or node_modules.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Runs the Rush version that rush.json pins, so no global install is needed.
+# Runs the Rush version that rush.json pins. You do not need a global rush command.
 rush() { node common/scripts/install-run-rush.js "$@"; }
 
-# The steps edit these files; put them back so a rerun starts from the same state.
+# The steps change these files. The script puts back the saved copies when it stops.
 SAVED="$(mktemp -d)"
 cp rush.json "$SAVED/rush.json"
 cp packages/app/package.json "$SAVED/app-package.json"
@@ -20,13 +20,15 @@ COMMITTED=common/config/rush/pnpm-lock.yaml
 TEMP=common/temp/pnpm-lock.yaml
 LINK=packages/app/node_modules/@graphql-typed-document-node/core
 
-# Prints the peer variant that the lockfile records for app -> @graphql-typed-document-node/core.
+# Prints the graphql version that a lockfile records for the peer of
+# @graphql-typed-document-node/core in app.
 variant() {
   awk '/^  \.\.\/\.\.\/packages\/app:/{p=1;next} p&&/^  [^ ]/{p=0} p' "$1" \
     | grep -A2 "typed-document-node/core'" | grep -o 'graphql@[^)]*' || echo "(none)"
 }
 
-# Prints the peer variant that node_modules links for app -> @graphql-typed-document-node/core.
+# Prints the graphql version that node_modules links for the peer of
+# @graphql-typed-document-node/core in app.
 linked() {
   readlink "$LINK" | grep -o 'graphql@[^/]*' || echo "(none)"
 }
@@ -49,29 +51,29 @@ set_app_graphql() {
 
 step() { printf '\n== %s\n' "$1"; }
 
-step "Reset to a clean state"
+step "Start from the same state each time"
 rush purge >/dev/null
 rm -f "$COMMITTED" common/config/rush/repo-state.json
 set_pnpm "$PNPM_OLD"
 set_app_graphql add
 
-step "1. app depends on graphql@17.0.0-alpha.7 directly; rush update with pnpm $PNPM_OLD"
+step "1. app depends on graphql@17.0.0-alpha.7. Run rush update with pnpm $PNPM_OLD"
 rush update >/dev/null
 echo "committed lockfile: $(variant "$COMMITTED")"
 
-step "2. Remove graphql from app; rush update with pnpm $PNPM_OLD"
+step "2. Remove graphql from app. Run rush update with pnpm $PNPM_OLD"
 set_app_graphql remove
 rush update >/dev/null
 echo "committed lockfile: $(variant "$COMMITTED")"
-echo "node_modules link:  $(linked)"
+echo "node_modules:       $(linked)"
 BEFORE="$(mktemp)"; cp "$COMMITTED" "$BEFORE"
 
-step "3. Switch to pnpm $PNPM_NEW; rush update"
+step "3. Set pnpm to $PNPM_NEW, then run rush update"
 set_pnpm "$PNPM_NEW"
 rush update >/dev/null
 echo "temp lockfile:      $(variant "$TEMP")"
 echo "committed lockfile: $(variant "$COMMITTED")"
-echo "node_modules link:  $(linked)"
+echo "node_modules:       $(linked)"
 if cmp -s "$COMMITTED" "$BEFORE"; then
   echo "committed lockfile changed: no"
 else
@@ -79,11 +81,11 @@ else
 fi
 rm "$BEFORE"
 
-step "4. Clean checkout: rush purge; rush install with pnpm $PNPM_NEW"
+step "4. Run rush purge, then rush install with pnpm $PNPM_NEW"
 rush purge >/dev/null
 rush install >/dev/null
 echo "committed lockfile: $(variant "$COMMITTED")"
-echo "node_modules link:  $(linked)"
+echo "node_modules:       $(linked)"
 
 step "Result"
 if [ "$(variant "$COMMITTED")" != "$(linked)" ]; then

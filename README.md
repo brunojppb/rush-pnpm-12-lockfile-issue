@@ -1,69 +1,84 @@
-# Rush + pnpm 12: committed lockfile goes out of sync with node_modules
+# Rush with pnpm 12: the committed lockfile does not match node_modules
 
-With pnpm 12, `rush update` can leave `common/config/rush/pnpm-lock.yaml` unchanged while pnpm writes a different lockfile and links different packages. A later `rush install` on a clean checkout also links packages that the committed lockfile does not record.
+This repository reproduces a Rush bug with pnpm 12.
 
-## Run it
+This text uses two names for two lockfiles:
 
-You need Node 24 (see `.nvmrc`). The script runs Rush through `common/scripts/install-run-rush.js`, which downloads Rush 5.181.0 and the pinned pnpm versions. You do not need a global `rush`.
+- The **committed lockfile** is `common/config/rush/pnpm-lock.yaml`. You commit this file to git.
+- The **temp lockfile** is `common/temp/pnpm-lock.yaml`. pnpm writes this file during an install.
+
+## The problem
+
+With pnpm 12, `rush update` can keep the old committed lockfile. pnpm writes a different temp lockfile and links different packages in `node_modules`. Rush does not copy the temp lockfile to the committed lockfile.
+
+`rush install` in a new clone has the same problem. It links packages that the committed lockfile does not record.
+
+## Run the reproduction
+
+You need Node 24. The `.nvmrc` file pins it.
 
 ```bash
 ./repro.sh
 ```
 
-The script starts from a clean state each time. It exits 1 when it finds the bug.
+You do not need a global `rush` command. The script runs `common/scripts/install-run-rush.js`. That script downloads Rush 5.181.0 and the pnpm versions that the steps use.
 
-## What the script does
+The script starts from the same state each time. It exits with code 1 when it finds the bug.
 
-The repo holds three projects:
+## The repository
+
+The repository has three projects:
 
 - `lib` depends on `graphql@17.0.0-alpha.7`.
 - `legacy` depends on `graphql@16.13.1`.
-- `app` depends on `lib` and on `@graphql-typed-document-node/core@3.2.0`, which has a peer dependency on `graphql`.
+- `app` depends on `lib` and on `@graphql-typed-document-node/core@3.2.0`.
 
-The steps:
+`@graphql-typed-document-node/core` has a peer dependency on `graphql`. The lockfile records the `graphql` version that pnpm picks for this peer. This text calls that record the **peer variant**.
 
-1. `app` also depends on `graphql@17.0.0-alpha.7`. `rush update` with pnpm 11.24.0 records the peer variant `3.2.0(graphql@17.0.0-alpha.7)`.
-2. The script removes `graphql` from `app`. `rush update` with pnpm 11.24.0 keeps that peer variant.
-3. The script switches `pnpmVersion` to 12.10.1 and runs `rush update`.
-4. The script runs `rush purge` and `rush install`, the same as CI on a clean checkout.
+## The steps
 
-## Output
+1. `app` depends on `graphql@17.0.0-alpha.7`. The script runs `rush update` with pnpm 11.24.0.
+2. The script removes `graphql` from `app`. It runs `rush update` with pnpm 11.24.0 again.
+3. The script sets `pnpmVersion` to 12.10.1. It runs `rush update`.
+4. The script runs `rush purge`, then `rush install`. This step does the same work as a new clone.
+
+## The result
 
 ```
-== 3. Switch to pnpm 12.10.1; rush update
+== 3. Set pnpm to 12.10.1, then run rush update
 temp lockfile:      graphql@16.13.1
 committed lockfile: graphql@17.0.0-alpha.7
-node_modules link:  graphql@16.13.1
+node_modules:       graphql@16.13.1
 committed lockfile changed: no
 
-== 4. Clean checkout: rush purge; rush install with pnpm 12.10.1
+== 4. Run rush purge, then rush install with pnpm 12.10.1
 committed lockfile: graphql@17.0.0-alpha.7
-node_modules link:  graphql@16.13.1
+node_modules:       graphql@16.13.1
 
 == Result
 BUG: the committed lockfile records graphql@17.0.0-alpha.7, but node_modules links graphql@16.13.1.
 ```
 
-## Expected
+## The expected result
 
-After step 3, `common/config/rush/pnpm-lock.yaml` records `3.2.0(graphql@16.13.1)`, the same as `common/temp/pnpm-lock.yaml` and `node_modules`.
+After step 3, the committed lockfile records `graphql@16.13.1`. The temp lockfile and `node_modules` record the same version.
 
-## Why it happens
+## The cause
 
-pnpm 12 resolves peer dependencies again during an install. `17.0.0-alpha.7` does not satisfy the peer range `^17.0.0`, so pnpm 12 picks `graphql@16.13.1`. pnpm 11 kept the existing variant. pnpm 12 writes the new variant to `common/temp/pnpm-lock.yaml`, so pnpm itself stays consistent.
+After step 2, the peer variant is `graphql@17.0.0-alpha.7`. This version does not satisfy the peer range `^17.0.0`. pnpm 11 keeps the old peer variant. pnpm 12 resolves the peer again and picks `graphql@16.13.1`. pnpm 12 writes this version to the temp lockfile, so the temp lockfile and `node_modules` match.
 
-Rush copies `common/temp/pnpm-lock.yaml` back to `common/config/rush/pnpm-lock.yaml` only when Rush's own check finds the committed lockfile out of date. Here the `package.json` files match the lockfile, so Rush skips the copy. The `else` branch in `libraries/rush-lib/src/logic/base/BaseInstallManager.ts` has this comment:
+Rush copies the temp lockfile to the committed lockfile only when its own check finds a change. Here, the `package.json` files did not change, so Rush does not copy the file. `libraries/rush-lib/src/logic/base/BaseInstallManager.ts` has this comment in the branch that skips the copy:
 
 ```ts
 // TODO: Validate whether the package manager updated it in a nontrivial way
 ```
 
-`rush install` passes `--no-prefer-frozen-lockfile` to pnpm by default. pnpm 12 then resolves the peers again, and it does not follow the committed lockfile.
+`rush install` has a related problem. By default, it gives pnpm the `--no-prefer-frozen-lockfile` option. pnpm 12 then resolves the peers again and does not follow the committed lockfile.
 
 ## Workarounds
 
-- `rush update --recheck` copies the lockfile that pnpm wrote.
-- `"usePnpmFrozenLockfileForRushInstall": true` in `common/config/rush/experiments.json` makes `rush install` pass `--frozen-lockfile`. pnpm 12 then links the variant that the committed lockfile records. `rush update` still leaves the committed lockfile stale.
+- Run `rush update --recheck`. Rush then copies the temp lockfile to the committed lockfile.
+- Set `"usePnpmFrozenLockfileForRushInstall": true` in `common/config/rush/experiments.json`. `rush install` then gives pnpm the `--frozen-lockfile` option, and pnpm follows the committed lockfile. This setting does not change `rush update`.
 
 ## Versions
 
