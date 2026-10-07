@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/rush/v5/rush.schema.json",
+  "rushVersion": "5.181.0",
+  "pnpmVersion": "11.24.0",
+  "nodeSupportedVersionRange": ">=22.12.0 <23.0.0",
+  "projects": [
+    { "packageName": "lib", "projectFolder": "packages/lib" },
+    { "packageName": "legacy", "projectFolder": "packages/legacy" },
+    { "packageName": "app", "projectFolder": "packages/app" }
+  ]
+}

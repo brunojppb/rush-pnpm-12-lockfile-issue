@@ -1,0 +1,6 @@
+node_modules/
+common/temp/
+# repro.sh generates these.
+common/config/rush/pnpm-lock.yaml
+common/config/rush/repo-state.json
+**/.rush/temp/

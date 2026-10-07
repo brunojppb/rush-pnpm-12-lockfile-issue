@@ -1,0 +1,7 @@
+{
+  "name": "lib",
+  "version": "1.0.0",
+  "dependencies": {
+    "graphql": "17.0.0-alpha.7"
+  }
+}

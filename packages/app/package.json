@@ -1,0 +1,9 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "dependencies": {
+    "@graphql-typed-document-node/core": "3.2.0",
+    "graphql": "17.0.0-alpha.7",
+    "lib": "workspace:*"
+  }
+}
